@@ -2,12 +2,17 @@
   "name": "nbb-dev-scripts",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "start-remote-db": "node src/remote_db_service.js"
+  },
   "devDependencies": {
     "@logseq/nbb-logseq": "logseq/nbb-logseq#feat-db-v24"
   },
   "dependencies": {
     "better-sqlite3": "11.10.0",
     "fs-extra": "9.1.0",
-    "mldoc": "^1.5.9"
+    "mldoc": "^1.5.9",
+    "express": "^4.18.2",
+    "ws": "^8.13.0"
   }
 }

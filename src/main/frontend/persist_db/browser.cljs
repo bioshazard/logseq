@@ -85,42 +85,81 @@
 (defn start-db-worker!
   []
   (when-not util/node-test?
-    (let [worker-url (if (util/electron?)
-                       "js/db-worker.js"
-                       "static/js/db-worker.js")
-          worker (js/Worker. (str worker-url "?electron=" (util/electron?) "&publishing=" config/publishing?))
-          wrapped-worker* (Comlink/wrap worker)
-          wrapped-worker (fn [qkw direct-pass? & args]
-                           (p/let [result (.remoteInvoke ^js wrapped-worker*
-                                                         (str (namespace qkw) "/" (name qkw))
-                                                         direct-pass?
-                                                         (if direct-pass?
-                                                           (into-array args)
-                                                           (ldb/write-transit-str args)))]
-                             (if direct-pass?
-                               result
-                               (ldb/read-transit-str result))))
-          t1 (util/time-ms)]
-      (Comlink/expose #js{"remoteInvoke" thread-api/remote-function} worker)
-      (worker-handler/handle-message! worker wrapped-worker)
-      (reset! state/*db-worker wrapped-worker)
-      (-> (p/let [_ (sync-app-state!)
-                  _ (state/<invoke-db-worker :thread-api/init config/RTC-WS-URL)
-                  _ (js/console.debug (str "debug: init worker spent: " (- (util/time-ms) t1) "ms"))
-                  _ (sync-ui-state!)
-                  _ (ask-persist-permission!)
-                  _ (state/pub-event! [:graph/sync-context])]
-            (ldb/register-transact-fn!
-             (fn worker-transact!
-               [repo tx-data tx-meta]
-               (db-transact/transact transact!
-                                     (if (string? repo) repo (state/get-current-repo))
-                                     tx-data
-                                     (assoc tx-meta :client-id (:client-id @state/state)))))
-            (db-transact/listen-for-requests))
+    (if (config/remote-db-enabled?)
+      (let [remote-url config/remote-db-url
+            remote-worker (fn [qkw direct-pass? & args]
+                            (p/let [method (str (namespace qkw) "/" (name qkw))
+                                    body (if direct-pass?
+                                           (js/JSON.stringify (clj->js args))
+                                           (ldb/write-transit-str args))
+                                    headers (clj->js {"Content-Type" (if direct-pass?
+                                                                         "application/json"
+                                                                         "application/transit+json")
+                                                       "x-direct-pass" (str direct-pass?)})
+                                    resp (js/fetch (str remote-url "/api/db/" method)
+                                                   #js {:method "POST"
+                                                        :headers headers
+                                                        :body body})
+                                    _ (when-not (.-ok resp)
+                                        (throw (js/Error. (str "HTTP" (.-status resp)))) )
+                                    text (.text resp)]
+                              (if direct-pass?
+                                (js/JSON.parse text)
+                                (ldb/read-transit-str text))))
+            t1 (util/time-ms)]
+        (reset! state/*db-worker remote-worker)
+        (-> (p/let [_ (sync-app-state!)
+                    _ (state/<invoke-db-worker :thread-api/init config/RTC-WS-URL)
+                    _ (js/console.debug (str "debug: init worker spent: " (- (util/time-ms) t1) "ms"))
+                    _ (sync-ui-state!)
+                    _ (ask-persist-permission!)
+                    _ (state/pub-event! [:graph/sync-context])]
+              (ldb/register-transact-fn!
+               (fn worker-transact!
+                 [repo tx-data tx-meta]
+                 (db-transact/transact transact!
+                                       (if (string? repo) repo (state/get-current-repo))
+                                       tx-data
+                                       (assoc tx-meta :client-id (:client-id @state/state)))))
+              (db-transact/listen-for-requests))
+            (p/catch (fn [error]
+                       (js/console.error error)))))
+      (let [worker-url (if (util/electron?)
+                         "js/db-worker.js"
+                         "static/js/db-worker.js")
+            worker (js/Worker. (str worker-url "?electron=" (util/electron?) "&publishing=" config/publishing?))
+            wrapped-worker* (Comlink/wrap worker)
+            wrapped-worker (fn [qkw direct-pass? & args]
+                             (p/let [result (.remoteInvoke ^js wrapped-worker*
+                                                           (str (namespace qkw) "/" (name qkw))
+                                                           direct-pass?
+                                                           (if direct-pass?
+                                                             (into-array args)
+                                                             (ldb/write-transit-str args)))]
+                               (if direct-pass?
+                                 result
+                                 (ldb/read-transit-str result))))
+            t1 (util/time-ms)]
+        (Comlink/expose #js{"remoteInvoke" thread-api/remote-function} worker)
+        (worker-handler/handle-message! worker wrapped-worker)
+        (reset! state/*db-worker wrapped-worker)
+        (-> (p/let [_ (sync-app-state!)
+                    _ (state/<invoke-db-worker :thread-api/init config/RTC-WS-URL)
+                    _ (js/console.debug (str "debug: init worker spent: " (- (util/time-ms) t1) "ms"))
+                    _ (sync-ui-state!)
+                    _ (ask-persist-permission!)
+                    _ (state/pub-event! [:graph/sync-context])]
+              (ldb/register-transact-fn!
+               (fn worker-transact!
+                 [repo tx-data tx-meta]
+                 (db-transact/transact transact!
+                                       (if (string? repo) repo (state/get-current-repo))
+                                       tx-data
+                                       (assoc tx-meta :client-id (:client-id @state/state)))))
+              (db-transact/listen-for-requests))
           (p/catch (fn [error]
                      (prn :debug "Can't init SQLite wasm")
-                     (js/console.error error)))))))
+                     (js/console.error error))))))))
 
 (defn <export-db!
   [repo data]
