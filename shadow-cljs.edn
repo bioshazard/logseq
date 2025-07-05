@@ -55,7 +55,8 @@
                           ;; Set to switch file sync server to dev, set this to false in `yarn watch`
                           frontend.config/ENABLE-FILE-SYNC-PRODUCTION #shadow/env ["ENABLE_FILE_SYNC_PRODUCTION" :as :bool :default true]
                           frontend.config/ENABLE-RTC-SYNC-PRODUCTION #shadow/env ["ENABLE_RTC_SYNC_PRODUCTION" :as :bool :default true]
-                          frontend.config/REVISION #shadow/env ["LOGSEQ_REVISION" :default "dev"]} ;; set by git-revision-hook
+                          frontend.config/REVISION #shadow/env ["LOGSEQ_REVISION" :default "dev"]
+                          frontend.config/REMOTE-DB-URL #shadow/env ["REMOTE_DB_URL" :default ""]} ;; set by git-revision-hook
 
         ;; NOTE: electron, browser/mobile-app use different asset-paths.
         ;;   For browser/mobile-app devs, assets are located in /static/js(via HTTP root).
@@ -105,6 +106,13 @@
                            :compiler-options {:static-fns false}
                            :output-to "static/gen-malli-kondo-config.js"
                            :main gen-malli-kondo-config.core/main}
+
+  :db-worker-node {:target :node-script
+                   :output-to "static/db-worker.node.js"
+                   :main frontend.worker.db-worker/init
+                   :compiler-options {:infer-externs :auto
+                                      :warnings {:fn-deprecated false
+                                                 :redef false}}}
 
   :publishing {:target :browser
                :module-loader true

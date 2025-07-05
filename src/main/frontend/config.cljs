@@ -59,6 +59,12 @@
 (if ENABLE-RTC-SYNC-PRODUCTION
   (def RTC-WS-URL "wss://ws.logseq.com/rtc-sync?token=%s")
   (def RTC-WS-URL "wss://ws-dev.logseq.com/rtc-sync?token=%s"))
+
+;; URL of the remote db service. When non-empty, db-worker will connect to it
+;; instead of spawning a web worker locally.
+(goog-define REMOTE-DB-URL "")
+(defonce remote-db-url REMOTE-DB-URL)
+(defn remote-db-enabled? [] (not (empty? remote-db-url)))
 ;; Feature flags
 ;; =============
 
